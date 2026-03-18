@@ -3,7 +3,7 @@ import express    from "express";
 import cors       from "cors";
 import OpenAI     from "openai";
 import dotenv     from "dotenv";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import fs         from "fs";
 
 dotenv.config();
@@ -15,23 +15,8 @@ app.use(express.json());
 // ── OpenAI ─────────────────────────────────────────────────────────────────
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// ── Email (IPv4 forzado via dns.lookup — único método que funciona en Render) ─
-import dns from "dns";
-
-const transporter = nodemailer.createTransport({
-  host:   "smtp.gmail.com",
-  port:   587,
-  secure: false,
-  auth:   { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  tls:    { rejectUnauthorized: false },
-  connectionTimeout: 15000,
-  greetingTimeout:   15000,
-  socketTimeout:     20000,
-  // Fuerza IPv4 resolviendo el hostname antes de conectar
-  lookup: (hostname, options, callback) => {
-    dns.lookup(hostname, { family: 4 }, callback);
-  },
-});
+// ── Email via Resend (HTTP — funciona en Render free sin problemas SMTP) ───
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // SESIONES
@@ -287,8 +272,8 @@ async function sendLeadEmail(data, tipo, history) {
       return `<tr style="background:${bg}"><td style="padding:5px 12px;font-weight:600;border:1px solid #eee;white-space:nowrap">${quien}</td><td style="padding:5px 12px;border:1px solid #eee">${m.content}</td></tr>`;
     }).join("");
 
-  await transporter.sendMail({
-    from:    process.env.EMAIL_USER,
+  await resend.emails.send({
+    from:    "QUATRIC Chatbot <proyectos@quatricsv.com>",
     to:      process.env.LEAD_EMAIL || "proyectos@quatricsv.com",
     subject: `🔌 Lead ${tipo.toUpperCase()} — ${nombre} | QUATRIC`,
     html: `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;max-width:680px;margin:auto">
@@ -326,10 +311,10 @@ async function sendConfirmationEmail(data) {
    .map(([k,v]) => `<tr><td style="padding:8px 16px;font-weight:600;background:#f4f6ff;border:1px solid #dde3f0;width:130px">${k}</td><td style="padding:8px 16px;border:1px solid #dde3f0">${v}</td></tr>`)
    .join("");
 
-  await transporter.sendMail({
-    from:    `"QUATRIC SV" <${process.env.EMAIL_USER}>`,
+  await resend.emails.send({
+    from:    "QUATRIC SV <proyectos@quatricsv.com>",
     to:      data.correo,
-    replyTo: process.env.LEAD_EMAIL || "proyectos@quatricsv.com",
+    replyTo: "proyectos@quatricsv.com",
     subject: `✅ Recibimos tu solicitud, ${nombre} — QUATRIC SV`,
     html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/></head>
 <body style="margin:0;padding:0;background:#f0f2f8;font-family:system-ui,sans-serif">
@@ -477,11 +462,11 @@ app.get("/health", (_, res) => res.json({
 
 app.get("/test-email", async (_, res) => {
   try {
-    await transporter.sendMail({
-      from:    process.env.EMAIL_USER,
+    await resend.emails.send({
+      from:    "QUATRIC Chatbot <proyectos@quatricsv.com>",
       to:      process.env.LEAD_EMAIL || "proyectos@quatricsv.com",
       subject: "✅ Test chatbot QUATRIC v2.1",
-      html:    "<p>Email funcionando correctamente — QUATRIC Chatbot v2.1</p>",
+      html:    "<p>Email funcionando correctamente — QUATRIC Chatbot v2.1 via Resend</p>",
     });
     res.json({ status: "ok", message: "Correo enviado" });
   } catch (err) {
