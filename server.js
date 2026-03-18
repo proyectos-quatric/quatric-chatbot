@@ -1,4 +1,4 @@
-// QUATRIC SV — Chatbot Server v2.1
+// QUATRIC SV — Chatbot Server v2.2
 import express    from "express";
 import cors       from "cors";
 import OpenAI     from "openai";
@@ -283,7 +283,7 @@ async function sendLeadEmail(data, tipo, history) {
   <table style="border-collapse:collapse;width:100%;font-size:14px">${filas}</table>
   <h3 style="margin-top:24px">Conversación</h3>
   <table style="border-collapse:collapse;width:100%;font-size:13px">${transcript}</table>
-  <p style="font-size:11px;color:#999;margin-top:16px">Generado por QUATRIC Chatbot v2.1</p>
+  <p style="font-size:11px;color:#999;margin-top:16px">Generado por QUATRIC Chatbot v2.2</p>
 </div></body></html>`,
   });
 }
@@ -466,7 +466,7 @@ app.get("/test-email", async (_, res) => {
       from:    "QUATRIC Chatbot <proyectos@quatricsv.com>",
       to:      process.env.LEAD_EMAIL || "proyectos@quatricsv.com",
       subject: "✅ Test chatbot QUATRIC v2.1",
-      html:    "<p>Email funcionando correctamente — QUATRIC Chatbot v2.1 via Resend</p>",
+      html:    "<p>Email funcionando correctamente — QUATRIC Chatbot v2.2 via Resend</p>",
     });
     res.json({ status: "ok", message: "Correo enviado" });
   } catch (err) {
@@ -476,4 +476,4 @@ app.get("/test-email", async (_, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 QUATRIC Chat Server v2.1 → http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`🚀 QUATRIC Chat Server v2.2 → http://localhost:${PORT}`));
