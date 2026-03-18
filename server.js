@@ -60,7 +60,9 @@ const LOCATION_RE = /\b(san salvador|santa ana|san miguel|sonsonate|chalatenango
 const TIPO_RES_RE = /\b(casa|hogar|vivien\w*|residen\w*|apartamento|apto|domicil\w*|habitaci[óo]n|cuarto)\b/i;
 const TIPO_IND_RE = /\b(empresa|industrial|planta|f[áa]brica|gasolinera|bodega|negocio|comercial|taller|hotel|hospital|subestaci[óo]n|distribuci[óo]n|nave|almac[eé]n|local|sala|oficina|consultorio|cl[íi]nica|restaurante|tienda|farmacia|edificio|escuela|colegio|universidad|panaderia|autoparts)\b/i;
 const NAME_RE     = /(?:(?:me llamo|soy|mi nombre es|ll[áa]mame)\s+)([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}){0,2})|^([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}){1,2})\s*[,\.]/im;
-const NAME_BLOCK  = /^(no|si|ok|ya|hola|buenas|gracias|bien|mal|claro|perfecto|listo|dale|bueno|quiero|tengo|necesito|eso|esto|aqui|ahi|pues|este|para)/i;
+const NAME_BLOCK  = /^(no|si|ok|ya|hola|buenas|gracias|bien|mal|claro|perfecto|listo|dale|bueno|quiero|tengo|necesito|eso|esto|aqui|ahi|pues|este|para|san|santa|santo|colonia|residencial|urbanizacion|urb|es|de|la|lo|las|los|un|una|el|mi|por|con|que|como|donde)/i;
+// Palabras que indican que la respuesta NO es un nombre propio
+const NOT_A_NAME_RE = /(san|santa|santo|colonia|urb\.?|urbanizaci[oó]n|ciudad|barrio|caser[ií]o|canton|aldea|municipio|departamento|zona|sector|boulevard|avenida|calle|pasaje|lote|manzana|bloque|edificio|local|negocio|empresa|proyecto|instalaci[oó]n|presupuesto|cotizaci[oó]n|trabajo|servicio)/i;
 const PROYECTO_RE = /\b(instalaci[óo]n|cableado|transformador|tablero|panel|acometida|circuito|mantenimiento|revisi[óo]n|ampliaci[óo]n|subestaci[óo]n|alumbrado|medidor|generador)\b/i;
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -73,7 +75,7 @@ function lastAsked(history) {
   const last = [...history].reverse().find(m => m.role === "assistant");
   if (!last) return null;
   const t = last.content.toLowerCase();
-  if (/nombre completo|tu nombre|cómo te llamas|cuál es tu nombre/.test(t)) return "nombre";
+  if (/nombre completo|tu nombre|cómo te llamas|cuál es tu nombre|nombre y apellido|tu nombre completo/.test(t)) return "nombre";
   if (/tel[eé]fono|número de contacto|número cel/.test(t))                  return "telefono";
   if (/correo|email/.test(t))                                               return "correo";
   if (/municipio|colonia|zona|ubicaci[oó]n|dónde est[aá]|en qué zona/.test(t)) return "ubicacion";
@@ -96,10 +98,14 @@ function extractData(msg, session) {
   if (asked === "nombre" && !d.nombre) {
     const palabras   = raw.split(/\s+/);
     const soloLetras = /^[a-záéíóúüñA-ZÁÉÍÓÚÜÑ]+$/;
+    const lower      = raw.toLowerCase();
     if (
       palabras.length >= 1 && palabras.length <= 4 &&
       palabras.every(p => soloLetras.test(p) && p.length >= 2) &&
-      !NAME_BLOCK.test(palabras[0])
+      !NAME_BLOCK.test(palabras[0]) &&
+      !NOT_A_NAME_RE.test(lower) &&           // no es una ubicación o término de negocio
+      !LOCATION_RE.test(lower) &&             // no es un lugar conocido
+      lower !== (d.ubicacion || "").toLowerCase()
     ) d.nombre = capitalize(raw);
   }
   if (asked === "telefono" && !d.telefono) {
@@ -153,6 +159,7 @@ function extractData(msg, session) {
         palabras.length >= 2 && palabras.length <= 3 &&
         palabras.every(p => soloLetras.test(p) && p.length >= 2) &&
         !NAME_BLOCK.test(palabras[0]) &&
+        !NOT_A_NAME_RE.test(lower) &&
         !LOCATION_RE.test(lower) &&
         lower !== (d.ubicacion || "").toLowerCase()
       ) d.nombre = capitalize(raw);
@@ -180,6 +187,13 @@ function buildPrompt(data, techQ = 0) {
     ? `TOPE TÉCNICO ACTIVO: Ya respondiste 2 consultas técnicas. Si hacen otra, NO respondas. Di: "Para ese detalle, uno de nuestros ingenieros te asesora mejor. ¿Te contactamos?"`
     : `Puedes responder hasta ${2 - techQ} consulta(s) técnica(s) más, en máximo 50 caracteres. Solo el dato clave.`;
 
+  const priceRule = `REGLA DE PRECIOS — PROHIBICIÓN ABSOLUTA:
+NUNCA des precios, estimados, rangos, aproximaciones ni costos de ningún tipo.
+Esto incluye: "USD X", "entre X y Y", "aproximadamente X", "ronda los X", "costaría X".
+Si el usuario pide un precio, estimado o cotización, responde SIEMPRE:
+"Los precios los genera un representante de QUATRIC según tu proyecto específico. ¿Te contactamos para darte una cotización exacta?"
+Esta regla NO tiene excepciones bajo ninguna circunstancia.`;
+
   if (!d.tipo) {
     return `Eres el asistente virtual de QUATRIC, empresa salvadoreña de ingeniería eléctrica.
 Servicios: instalaciones eléctricas, tableros, acometidas, mantenimiento residencial e industrial.
@@ -193,6 +207,8 @@ COMPORTAMIENTO:
 - NUNCA te presentes ni repitas el saludo si el usuario ya expresó una intención.
 - NUNCA repitas la misma pregunta dos veces.
 - Máximo 2 líneas.
+
+${priceRule}
 
 ${techRule}`;
   }
@@ -225,6 +241,7 @@ ${techRule}`;
     return `Eres el asistente de QUATRIC. Lead ${d.tipo} COMPLETO.
 Datos: ${confirmados}.
 Agradece, confirma datos clave en 1 línea y di que un asesor contactará pronto. Máximo 3 líneas.
+${priceRule}
 ${techRule}`;
   }
 
@@ -238,6 +255,7 @@ REGLAS:
 3. Tu respuesta SIEMPRE termina con una pregunta.
 4. Contexto si preguntan: "Para que nuestro representante te contacte y dé seguimiento."
 5. Máximo 2 líneas. Tono amigable.
+${priceRule}
 ${techRule}`;
 }
 
