@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>QUATRIC Chat — Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 16px; }
+    #chat { border: 1px solid #ddd; border-radius: 8px; padding: 16px; height: 360px;
+            overflow-y: auto; margin-bottom: 12px; background: #f9f9f9; display: flex;
+            flex-direction: column; gap: 8px; }
+    .msg { max-width: 80%; padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+    .user { background: #1a1a2e; color: #fff; align-self: flex-end; border-radius: 12px 12px 3px 12px; }
+    .bot  { background: #fff; color: #111; align-self: flex-start; border: 1px solid #e0e0e0;
+            border-radius: 12px 12px 12px 3px; }
+    .error{ background: #fee; color: #c00; align-self: flex-start; border: 1px solid #fcc;
+            border-radius: 8px; font-size: 13px; }
+    .confirm { background: #f0fdf4; color: #166534; align-self: stretch;
+               border: 1px solid #bbf7d0; border-radius: 8px; font-size: 13px;
+               padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+    .confirm .confirm-icon { font-size: 18px; flex-shrink: 0; }
+    .confirm .confirm-text { line-height: 1.5; }
+    .confirm strong { display: block; font-size: 13.5px; margin-bottom: 2px; }
+    #row  { display: flex; gap: 8px; }
+    #msg  { flex: 1; padding: 10px 14px; border: 1px solid #ccc; border-radius: 22px;
+            font-size: 14px; outline: none; }
+    #msg:focus { border-color: #1a1a2e; }
+    button { padding: 10px 20px; background: #1a1a2e; color: #fff; border: none;
+             border-radius: 22px; cursor: pointer; font-size: 14px; }
+    button:hover { opacity: 0.85; }
+    #meta { font-size: 11px; color: #999; margin-top: 6px; padding: 4px 8px;
+            background: #f0f0f0; border-radius: 4px; display: none; }
+  </style>
+</head>
+<body>
+
+<h3 style="color:#1a1a2e">🔌 QUATRIC Chatbot — Test</h3>
+<div id="chat"></div>
+<div id="row">
+  <input id="msg" placeholder="Escribe tu mensaje..." autocomplete="off" />
+  <button onclick="send()">Enviar</button>
+</div>
+<div id="meta"></div>
+
+<script>
+  // sessionId único por pestaña — soluciona el bug de "sessionId requerido"
+  const sessionId = "session_" + Math.random().toString(36).slice(2, 10);
+  const chat = document.getElementById("chat");
+  const metaEl = document.getElementById("meta");
+
+  // Mensaje de bienvenida
+  addMsg("¡Hola! Soy el asistente de QUATRIC. ¿En qué puedo ayudarte?", "bot");
+
+  document.getElementById("msg").addEventListener("keydown", e => {
+    if (e.key === "Enter") send();
+  });
+
+  async function send() {
+    const input = document.getElementById("msg");
+    const message = input.value.trim();
+    if (!message) return;
+
+    input.value = "";
+    addMsg(message, "user");
+
+    // Indicador de escritura
+    const typing = addMsg("...", "bot");
+
+    try {
+      const res = await fetch("http://localhost:3000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, sessionId })   // ← fix: sessionId incluido
+      });
+
+      const data = await res.json();
+      typing.remove();
+
+      if (data.error) {
+        addMsg("⚠️ Error del servidor: " + data.error, "error");
+        return;
+      }
+
+      addMsg(data.reply, "bot");
+
+      // Confirmación visual cuando el email acaba de enviarse
+      if (data.meta?.leadJustSent) {
+        const nombre = data.meta.collected?.nombre || "tu información";
+        const div = document.createElement("div");
+        div.className = "confirm";
+        div.innerHTML = `
+          <span class="confirm-icon">✅</span>
+          <div class="confirm-text">
+            <strong>Información enviada a QUATRIC</strong>
+            Hemos recibido tus datos, <em>${nombre}</em>. Un asesor te contactará pronto.
+          </div>`;
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      // Mostrar meta-datos de sesión (útil para debug)
+      if (data.meta) {
+        const col = data.meta.collected;
+        const items = Object.entries(col).map(([k,v]) => `${k}: ${v}`).join(" · ");
+        metaEl.style.display = "block";
+        metaEl.textContent = `[DEBUG] tipo: ${data.meta.tipo || "?"} | leadSent: ${data.meta.leadSent} | ${items}`;
+      }
+
+    } catch (err) {
+      typing.remove();
+      addMsg("⚠️ No se pudo conectar con el servidor. ¿Está corriendo node server.js?", "error");
+      console.error(err);
+    }
+  }
+
+  function addMsg(text, role) {
+    const div = document.createElement("div");
+    div.className = "msg " + role;
+    div.textContent = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+  }
+</script>
+
+</body>
+</html>

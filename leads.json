@@ -1,0 +1,26 @@
+[
+  {
+    "nombre": "Carlos López",
+    "telefono": "77777777",
+    "ubicacion": "Hola quiero instalación eléctrica Me llamo Carlos López Mi teléfono es 77777777 Estoy en San Salvador Mi correo es prueb",
+    "proyecto": "Hola quiero instalación eléctrica Me llamo Carlos López Mi teléfono es 77777777 Estoy en San Salvador Mi correo es prueba@gmail.com",
+    "tipo": null,
+    "capacidad": null,
+    "tension": null,
+    "fecha": null,
+    "correo": "prueba@gmail.com",
+    "fecha_guardado": "2026-03-18T07:32:59.482Z"
+  },
+  {
+    "nombre": "Santa Tecla",
+    "telefono": "76035176",
+    "ubicacion": "santa tecla",
+    "proyecto": "tengo 3 años",
+    "tipo": "residencial",
+    "capacidad": "35KVA",
+    "tension": "240V",
+    "fecha": null,
+    "correo": "armando.valle.t@gmail.com",
+    "fecha_guardado": "2026-03-18T07:42:26.665Z"
+  }
+]
