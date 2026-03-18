@@ -15,17 +15,22 @@ app.use(express.json());
 // ── OpenAI ─────────────────────────────────────────────────────────────────
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// ── Email (puerto 587 + IPv4 — funciona en Render free) ────────────────────
+// ── Email (IPv4 forzado via dns.lookup — único método que funciona en Render) ─
+import dns from "dns";
+
 const transporter = nodemailer.createTransport({
-  host:              "smtp.gmail.com",
-  port:              587,
-  secure:            false,
-  family:            4,
-  auth:              { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-  tls:               { rejectUnauthorized: false },
-  connectionTimeout: 10000,
-  greetingTimeout:   10000,
-  socketTimeout:     15000,
+  host:   "smtp.gmail.com",
+  port:   587,
+  secure: false,
+  auth:   { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+  tls:    { rejectUnauthorized: false },
+  connectionTimeout: 15000,
+  greetingTimeout:   15000,
+  socketTimeout:     20000,
+  // Fuerza IPv4 resolviendo el hostname antes de conectar
+  lookup: (hostname, options, callback) => {
+    dns.lookup(hostname, { family: 4 }, callback);
+  },
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
