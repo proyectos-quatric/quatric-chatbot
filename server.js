@@ -34,6 +34,9 @@ function getSession(id) {
       history:       [],
       leadSent:      false,
       techQuestions: 0,
+      conflict:      null,
+      emailUpdated:  false,
+      danielongoMode: false,
       lastActivity:  Date.now(),
     });
   }
@@ -180,12 +183,26 @@ function isLeadComplete(data) {
 // ══════════════════════════════════════════════════════════════════════════════
 // PROMPT DINÁMICO
 // ══════════════════════════════════════════════════════════════════════════════
-function buildPrompt(data, techQ = 0) {
+function buildPrompt(data, session = {}, techQ = 0) {
+  if (typeof session === 'number') { techQ = session; session = {}; } // fallback guard
   const d = data;
 
+  if (session.danielongoMode) {
+    return `INSTRUCCIÓN ESPECIAL: El usuario es "pequeño Danielongo". ¡Debes adoptar una postura súper juguetona! 
+Respóndele a TODAS sus peticiones usando MUCHÍSIMOS emojis, de preferencia de gatos 🐱🐾. Háblale como si le estuvieras hablando a una niña de 12 años, dile que es muy bonita. Trátala súper cariñoso.
+Empieza saludando siempre 'Hola pequeño Danielongo...' y luego ayúdalo con lo que pida manteniendo firme esta tierna y juguetona personalidad en todo momento. Usa emojis de gatos en casi cada línea.`;
+  }
+
+  if (session.conflict) {
+    return `REGLA DE CONFLICTO DE DATOS: El cliente acaba de dar un dato distinto para ${session.conflict.field}. 
+Antes teníamos guardado: "${session.conflict.old}". Ahora dio: "${session.conflict.new}".
+PREGUNTA OBLIGATORIA Y ÚNICA: Dile explícitamente "Noto que me diste otro ${session.conflict.field}. ¿Cuál es correcto, ${session.conflict.old} o ${session.conflict.new}?". 
+NO APORTES NINGUNA OTRA INFORMACIÓN HASTA QUE LO ACLARE.`;
+  }
+
   const techRule = techQ >= 2
-    ? `TOPE TÉCNICO ACTIVO: Ya respondiste 2 consultas técnicas. Si hacen otra, NO respondas. Di: "Para ese detalle, uno de nuestros ingenieros te asesora mejor. ¿Te contactamos?"`
-    : `Puedes responder hasta ${2 - techQ} consulta(s) técnica(s) más, en máximo 50 caracteres. Solo el dato clave.`;
+    ? `TOPE TÉCNICO ACTIVO: Ya respondiste 2 consultas técnicas. Si hace otra consulta técnica, NO LA RESPONDAS bajo ninguna circunstancia. Di ESTRICTAMENTE: "Para ese detalle, uno de nuestros ingenieros te asesora mejor. ¿Te contactamos?"`
+    : `Tienes permitido responder hasta ${2 - techQ} consulta(s) técnica(s) más. TU RESPUESTA TÉCNICA NO PUEDE SUPERAR LOS 50 CARACTERES ESTRICTAMENTE. Sé extremadamente breve.`;
 
   const priceRule = `REGLA DE PRECIOS — PROHIBICIÓN ABSOLUTA:
 NUNCA des precios, estimados, rangos, aproximaciones ni costos de ningún tipo.
@@ -194,11 +211,12 @@ Si el usuario pide un precio, estimado o cotización, responde SIEMPRE:
 "Los precios los genera un representante de QUATRIC según tu proyecto específico. ¿Te contactamos para darte una cotización exacta?"
 Esta regla NO tiene excepciones bajo ninguna circunstancia.`;
 
-  if (!d.tipo) {
+if (!d.tipo) {
     return `Eres el asistente virtual de QUATRIC, empresa salvadoreña de ingeniería eléctrica.
-Servicios: instalaciones eléctricas, tableros, acometidas, mantenimiento residencial e industrial.
+Servicios: estudios, diseños, construcción de proyectos, operación y mantenimiento. (SOLO ELECTRICIDAD).
 
 COMPORTAMIENTO:
+- REGLA OTROS SERVICIOS: Si preguntan por servicios NO eléctricos (ej. fontanería, albañilería, etc.), responde amablemente que por el momento solo es electricidad, pero que puede hablar con un representante de QUATRIC para averiguar más.
 - Saludo puro sin intención (solo "hola", "buenos días", "hi") → preséntate brevemente y pregunta en qué puedes ayudar HOY.
 - Intención comercial clara ("necesito un presupuesto", "quiero cotizar", "necesito ayuda", "quiero una instalación") → NO te presentes de nuevo. Pregunta directamente: "¿Es para tu casa o para un negocio?" 
 - Necesidad con contexto claro (menciona casa/empresa) → clasifica y avanza SIN preguntar el tipo.
@@ -409,13 +427,60 @@ app.post("/chat", async (req, res) => {
   const trimmed = message.trim().slice(0, 600);
   const session = getSession(sessionId);
 
-  extractData(trimmed, session);
+  if (/daniell?ongo/i.test(trimmed)) session.danielongoMode = true;
+
+  const UPDATE_RE = /\b(actualizar|cambiar|me equivoqu[eé]|no es|diferente|correcci[oó]n|corregir)\b/i;
+  const isUpdate = UPDATE_RE.test(trimmed);
+
+  let sEmail = trimmed;
+  sEmail = sEmail.replace(/gmailcom/i, "gmail.com").replace(/hotmailcom/i, "hotmail.com").replace(/yahoocom/i, "yahoo.com").replace(/outlookcom/i, "outlook.com").replace(/\.con\b/i, ".com").replace(/\.c0m\b/i, ".com");
+  if (!sEmail.includes("@")) {
+      if (sEmail.includes("gmail.com")) sEmail = sEmail.replace("gmail.com", "@gmail.com");
+      else if (sEmail.includes("hotmail.com")) sEmail = sEmail.replace("hotmail.com", "@hotmail.com");
+      else if (sEmail.includes("yahoo.com")) sEmail = sEmail.replace("yahoo.com", "@yahoo.com");
+      else if (sEmail.includes("outlook.com")) sEmail = sEmail.replace("outlook.com", "@outlook.com");
+  }
+  sEmail = sEmail.replace(/@@+/, "@");
+
+  const extract = {};
+  const mPhone = trimmed.match(PHONE_RE); if (mPhone) extract.telefono = mPhone[1].replace(/[\s\-]/g, "");
+  const mEmail = sEmail.match(EMAIL_RE);  if (mEmail) extract.correo = mEmail[0].toLowerCase();
+  const mName = trimmed.match(NAME_RE);   if (mName) extract.nombre = (mName[1] || mName[2]).trim();
+  const mLocation = trimmed.match(LOCATION_RE); if (mLocation) extract.ubicacion = mLocation[0];
+
+  if (session.conflict) {
+      const field = session.conflict.field;
+      if (/\b(s[ií]|nuevo|este|correcto|ese|primero|segundo|viejo|anterior|es|el)\b/i.test(trimmed) || (extract[field] && extract[field].toLowerCase() === session.data[field].toLowerCase())) {
+          if (extract[field]) {
+              session.data[field] = extract[field];
+              if (field === 'correo') session.emailUpdated = true;
+          }
+          session.conflict = null;
+      }
+  }
+
+  let caughtConflict = null;
+  for (const key of ['telefono', 'correo', 'ubicacion', 'nombre']) {
+      if (extract[key] && session.data[key] && session.data[key].toLowerCase() !== extract[key].toLowerCase()) {
+          if (isUpdate || (session.conflict && session.conflict.field === key && /\b(s[ií]|nuevo|este|correcto|ese)\b/i.test(trimmed))) {
+              session.data[key] = extract[key];
+              if (key === 'correo') session.emailUpdated = true;
+              session.conflict = null;
+          } else if (!session.conflict) {
+              caughtConflict = { field: key, old: session.data[key], new: extract[key] };
+          }
+      }
+  }
+
+  if (caughtConflict && !session.conflict) session.conflict = caughtConflict;
+
+  extractData(sEmail !== trimmed ? sEmail : trimmed, session);
 
   const TECH_RE = /\b(caida|voltaje|tension|amper|kva|kw|cable|awg|resistencia|circuito|calculo|norma|nema|carga|potencia|transformador|breaker|interruptor|tierra|neutro|fase|trifasico|bifasico)\b/i;
   if (TECH_RE.test(trimmed) && trimmed.includes("?") && session.techQuestions < 2)
     session.techQuestions++;
 
-  const systemPrompt = buildPrompt(session.data, session.techQuestions);
+  const systemPrompt = buildPrompt(session.data, session, session.techQuestions);
   const messages = [
     { role: "system", content: systemPrompt },
     ...session.history.slice(-10),
@@ -454,6 +519,16 @@ app.post("/chat", async (req, res) => {
         sendConfirmationEmail(session.data)
           .then(()  => console.log("✅ Email cliente enviado"))
           .catch(e  => console.error("❌ Email cliente:", e.message)),
+      ]);
+      saveLeadToFile(session.data);
+    } else if (session.leadSent && session.emailUpdated) {
+      session.emailUpdated = false;
+      console.log("🔄 Correo actualizado, reenviando leads:", session.data.correo);
+      Promise.all([
+        sendLeadEmail(session.data, session.data.tipo + " (ACTUALIZACIÓN CORREO)", session.history)
+          .catch(e  => console.error("❌ Email QUATRIC Update:", e.message)),
+        sendConfirmationEmail(session.data)
+          .catch(e  => console.error("❌ Email cliente Update:", e.message)),
       ]);
       saveLeadToFile(session.data);
     }
