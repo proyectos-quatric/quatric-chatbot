@@ -22,7 +22,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 // SESIONES
 // ══════════════════════════════════════════════════════════════════════════════
 const sessions    = new Map();
-const SESSION_TTL = 30 * 60 * 1000;
+const SESSION_TTL = 5 * 60 * 1000; // 5 minutos
 
 function getSession(id) {
   if (!sessions.has(id)) {
@@ -49,7 +49,7 @@ setInterval(() => {
   const now = Date.now();
   for (const [id, s] of sessions)
     if (now - s.lastActivity > SESSION_TTL) sessions.delete(id);
-}, 10 * 60 * 1000);
+}, 1 * 60 * 1000); // Revisar cada minuto en lugar de cada 10
 
 // ══════════════════════════════════════════════════════════════════════════════
 // REGEX
@@ -113,7 +113,8 @@ function extractData(msg, session) {
   }
   if (asked === "telefono" && !d.telefono) {
     const digits = raw.replace(/\D/g, "");
-    if (digits.length >= 7 && digits.length <= 11) d.telefono = digits;
+    let local = digits.startsWith("503") && digits.length >= 10 ? digits.slice(3) : digits;
+    if (digits.length >= 7 && digits.length <= 11 && /^[267]/.test(local)) d.telefono = digits;
   }
   if (asked === "correo" && !d.correo) {
     const fixed = raw.toLowerCase()
@@ -173,11 +174,20 @@ function extractData(msg, session) {
 // ══════════════════════════════════════════════════════════════════════════════
 // COMPLETITUD
 // ══════════════════════════════════════════════════════════════════════════════
+function isValidSVPhone(phone) {
+  if (!phone) return false;
+  const digits = String(phone).replace(/\D/g, "");
+  if (digits.length < 7) return false;
+  let local = digits.startsWith("503") && digits.length >= 10 ? digits.slice(3) : digits;
+  return /^[267]/.test(local);
+}
+
 function isLeadComplete(data) {
-  const base = data.nombre && data.telefono && data.correo && data.proyecto && data.ubicacion;
+  const validPhone = isValidSVPhone(data.telefono);
+  const base = data.nombre && data.nombre.trim().includes(" ") && validPhone && data.correo && data.proyecto && data.ubicacion;
   if (data.tipo === "residencial") return !!base;
   if (data.tipo === "industrial")  return !!(base && (data.capacidad || data.tension));
-  return !!(data.nombre && data.telefono && data.correo);
+  return !!(data.nombre && data.nombre.trim().includes(" ") && validPhone && data.correo);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -188,9 +198,12 @@ function buildPrompt(data, session = {}, techQ = 0) {
   const d = data;
 
   if (session.danielongoMode) {
-    return `INSTRUCCIÓN ESPECIAL: El usuario es "pequeño Danielongo". ¡Debes adoptar una postura súper juguetona! 
-Respóndele a TODAS sus peticiones usando MUCHÍSIMOS emojis, de preferencia de gatos 🐱🐾. Háblale como si le estuvieras hablando a una niña de 12 años, dile que es muy bonita. Trátala súper cariñoso.
-Empieza saludando siempre 'Hola pequeño Danielongo...' y luego ayúdalo con lo que pida manteniendo firme esta tierna y juguetona personalidad en todo momento. Usa emojis de gatos en casi cada línea.`;
+    return `INSTRUCCIÓN ESPECIAL: El usuario es "pequeña Danielongo". ¡YA NO ERES UN ASESOR DE ELECTRICIDAD! Ahora eres un experto absoluto en el grupo coreano BlackPink 🖤💗.
+COMPORTAMIENTO OBLIGATORIO:
+- Háblale como si fuera una niña de 12 años, trátala súper cariñoso y dile que es muy bonita.
+- Usa MUCHÍSIMOS emojis de gatos 🐱🐾 y cosas de K-pop 🎤💖.
+- Hazle trivias divertidas sobre BlackPink. De vez en cuando, hazle una trivia súper súper fácil de la materia de Ciencias (nivel niña de 12 años).
+- Empieza SIEMPRE tu próximo mensaje con 'Hola pequeña Danielongo...' y hazle una trivia. ¡NUNCA hables de electricidad ni ingeniería!`;
   }
 
   if (session.conflict) {
@@ -237,7 +250,7 @@ ${techRule}`;
   const faltanRes = [
     !d.proyecto  && "en qué consiste el proyecto eléctrico",
     !d.ubicacion && "municipio o colonia",
-    !d.nombre    && "nombre completo",
+    (!d.nombre || !d.nombre.trim().includes(" ")) && "nombre y apellido (o segundo nombre)",
     !d.telefono  && "número de teléfono",
     !d.correo    && "correo electrónico",
   ].filter(Boolean);
@@ -245,7 +258,7 @@ ${techRule}`;
   const faltanInd = [
     !d.proyecto  && "tipo de instalación o trabajo requerido",
     !d.ubicacion && "ubicación del proyecto",
-    !d.nombre    && "nombre del contacto",
+    (!d.nombre || !d.nombre.trim().includes(" ")) && "nombre del contacto y apellido",
     !d.telefono  && "teléfono de contacto",
     !d.correo    && "correo electrónico",
     !d.capacidad && "capacidad estimada (kVA o amperios)",
@@ -418,9 +431,17 @@ app.post("/chat", async (req, res) => {
   if (isRateLimited(ip))
     return res.status(429).json({ error: "Demasiadas solicitudes. Espera un momento." });
 
-  const { message, sessionId } = req.body;
+  const { message, sessionId, reset } = req.body;
+  
   if (!sessionId || typeof sessionId !== "string")
     return res.status(400).json({ error: "sessionId requerido" });
+
+  // Nuevo: si el frontend refresca la página y manda { reset: true } borramos la sesión
+  if (reset) {
+    sessions.delete(sessionId);
+    return res.json({ reply: "ok, sesión reiniciada externamente", meta: { reset: true } });
+  }
+
   if (!message || typeof message !== "string" || !message.trim())
     return res.status(400).json({ error: "Mensaje vacío" });
 
@@ -432,13 +453,14 @@ app.post("/chat", async (req, res) => {
   const UPDATE_RE = /\b(actualizar|cambiar|me equivoqu[eé]|no es|diferente|correcci[oó]n|corregir)\b/i;
   const isUpdate = UPDATE_RE.test(trimmed);
 
+  // Corrección de emails ultra-robusta (gmil.co, gmai.com, etc.)
   let sEmail = trimmed;
-  sEmail = sEmail.replace(/gmailcom/i, "gmail.com").replace(/hotmailcom/i, "hotmail.com").replace(/yahoocom/i, "yahoo.com").replace(/outlookcom/i, "outlook.com").replace(/\.con\b/i, ".com").replace(/\.c0m\b/i, ".com");
+  sEmail = sEmail.replace(/@(gmil|gmai|gamil|gmail|gimail)\.(com?|co|con|c0m|clm)\b/i, "@gmail.com");
+  sEmail = sEmail.replace(/@(hotmail|hotmai|hormail)\.(com?|co|con|c0m)\b/i, "@hotmail.com");
+  sEmail = sEmail.replace(/@(yahoo)\.(com?|co|con|c0m)\b/i, "@yahoo.com");
+  sEmail = sEmail.replace(/@(outlook)\.(com?|co|con|c0m)\b/i, "@outlook.com");
   if (!sEmail.includes("@")) {
-      if (sEmail.includes("gmail.com")) sEmail = sEmail.replace("gmail.com", "@gmail.com");
-      else if (sEmail.includes("hotmail.com")) sEmail = sEmail.replace("hotmail.com", "@hotmail.com");
-      else if (sEmail.includes("yahoo.com")) sEmail = sEmail.replace("yahoo.com", "@yahoo.com");
-      else if (sEmail.includes("outlook.com")) sEmail = sEmail.replace("outlook.com", "@outlook.com");
+      sEmail = sEmail.replace(/\s*(gmail\.com|hotmail\.com|yahoo\.com|outlook\.com)/i, "@$1");
   }
   sEmail = sEmail.replace(/@@+/, "@");
 
@@ -447,6 +469,16 @@ app.post("/chat", async (req, res) => {
   const mEmail = sEmail.match(EMAIL_RE);  if (mEmail) extract.correo = mEmail[0].toLowerCase();
   const mName = trimmed.match(NAME_RE);   if (mName) extract.nombre = (mName[1] || mName[2]).trim();
   const mLocation = trimmed.match(LOCATION_RE); if (mLocation) extract.ubicacion = mLocation[0];
+
+  // Interceptar solicitud de apellido si ya dio el primer nombre pero no el apellido
+  const history = session.history || [];
+  const lastAssisMsg = [...history].reverse().find(m => m.role === "assistant");
+  if (lastAssisMsg && /apellido/.test(lastAssisMsg.content.toLowerCase()) && session.data.nombre && !session.data.nombre.includes(" ")) {
+      const soloLetras = /^[a-záéíóúüñA-ZÁÉÍÓÚÜÑ\s]+$/;
+      if (soloLetras.test(trimmed) && trimmed.length >= 2 && trimmed.length <= 30) {
+          session.data.nombre = capitalize(session.data.nombre + " " + trimmed);
+      }
+  }
 
   if (session.conflict) {
       const field = session.conflict.field;
