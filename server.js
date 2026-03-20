@@ -67,7 +67,7 @@ const NAME_RE = /(?:(?:me llamo|soy|mi nombre es|ll[áa]mame)\s+)([A-ZÁÉÍÓÚ
 const NAME_BLOCK = /^(no|si|ok|ya|hola|buenas|gracias|bien|mal|claro|perfecto|listo|dale|bueno|quiero|tengo|necesito|eso|esto|aqui|ahi|pues|este|para|san|santa|santo|colonia|residencial|urbanizacion|urb|es|de|la|lo|las|los|un|una|el|mi|por|con|que|como|donde)/i;
 // Palabras que indican que la respuesta NO es un nombre propio
 const NOT_A_NAME_RE = /(san|santa|santo|colonia|urb\.?|urbanizaci[oó]n|ciudad|barrio|caser[ií]o|canton|aldea|municipio|departamento|zona|sector|boulevard|avenida|calle|pasaje|lote|manzana|bloque|edificio|local|negocio|empresa|proyecto|instalaci[oó]n|presupuesto|cotizaci[oó]n|trabajo|servicio)/i;
-const PROYECTO_RE = /\b(instalaci[óo]n|cableado|transformador|tablero|panel|acometida|circuito|mantenimiento|revisi[óo]n|ampliaci[óo]n|subestaci[óo]n|alumbrado|medidor|generador)\b/i;
+const PROYECTO_RE = /\b(instalaci[óo]n|cableado|transformador|tablero|panel|acometida|circuito|mantenimiento|revisi[óo]n|ampliaci[óo]n|subestaci[óo]n|alumbrado|medidor|generador|aire|aires|acondicionado|acondicionados|a\/c|minisplit|split|climatizaci[óo]n)\b/i;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -234,11 +234,13 @@ Si el usuario pide un precio, estimado o cotización, responde SIEMPRE:
 "Como asistente virtual no puedo brindarte precios por aquí, pero sabemos que cada instalación es única y requiere atención personalizada. 💡 ¿Me permites tomar tus datos para que nuestro equipo te contacte con una cotización a la medida de tu proyecto?"
 Esta regla NO tiene excepciones bajo ninguna circunstancia.`;
 
-  const outOfScopeRule = `REGLA DE FUERA DE ALCANCE MÁXIMA PRIORIDAD: Si el usuario pide o menciona cualquier cosa que NO sea puramente ingeniería eléctrica (ej. obra civil, diseño arquitectónico, albañilería, fontanería, pedir comida, temas ajenos), NUNCA sigas con el proceso de venta ni hagas preguntas para recolectar datos. Rechaza la solicitud explícitamente y de forma profesional. EJEMPLO OBLIGATORIO: "Es una solicitud muy interesante, aunque en QUATRIC nuestra área de especialidad es exclusivamente la ingeniería eléctrica. ⚡ ¿Hay algún proyecto eléctrico o instalación en la que te pueda asesorar?"`;
+  const outOfScopeRule = `REGLA DE FUERA DE ALCANCE MÁXIMA PRIORIDAD: Si el usuario pide o menciona cualquier cosa que NO sea puramente ingeniería eléctrica (ej. obra civil, diseño arquitectónico, albañilería, fontanería, pedir comida, temas ajenos), NUNCA sigas con el proceso de venta ni hagas preguntas para recolectar datos. Rechaza la solicitud explícitamente y de forma profesional. EJEMPLO OBLIGATORIO: "Es una solicitud muy interesante, aunque en QUATRIC nuestra área de especialidad es exclusivamente la ingeniería eléctrica. ⚡ ¿Hay algún proyecto eléctrico o instalación en la que te pueda asesorar?". (OJO EXCEPCIÓN IMPORTANTE: Los sistemas de Aire Acondicionado / Climatización SÍ son parte de nuestros servicios eléctricos, cotízalos y atiéndelos con total normalidad).`;
+
+  const rejectionRule = `REGLA DE NEGATIVA/DESPEDIDA (MÁXIMA PRIORIDAD): Si el usuario indica explícitamente que "no" necesita ayuda, que "nada", o se despide cerrando la conversación (ej. "no gracias", "eso es todo"), RESPÓNDELE amablemente agradeciendo su contacto y poniéndote a su entera disposición para cualquier proyecto eléctrico en el futuro. TERMINA la conversación ahí. NUNCA le preguntes por sus datos (nombre, municipio, teléfono, etc.) ni intentes continuar la cotización bajo ninguna circunstancia.`;
 
   if (!d.tipo) {
     return `Eres el asistente virtual de QUATRIC, empresa salvadoreña de ingeniería eléctrica.
-Servicios: estudios, diseños, construcción de proyectos ELÉCTRICOS, operación y mantenimiento. (SOLO ELECTRICIDAD).
+Servicios: estudios, diseños, construcción de proyectos ELÉCTRICOS, Aires Acondicionados, operación y mantenimiento. (SOLO ELECTRICIDAD / A.C.).
 
 COMPORTAMIENTO:
 - Saludo puro sin intención (solo "hola", "buenos días", "hi") → preséntate brevemente y pregunta en qué puedes ayudar HOY.
@@ -249,6 +251,7 @@ COMPORTAMIENTO:
 - NUNCA repitas la misma pregunta dos veces.
 - Máximo 2 líneas.
 
+${rejectionRule}
 ${outOfScopeRule}
 ${priceRule}
 
@@ -283,6 +286,7 @@ ${techRule}`;
     return `Eres el asistente de QUATRIC. Lead ${d.tipo} COMPLETO.
 Datos: ${confirmados}.
 Agradece, confirma datos clave en 1 línea y di que un asesor contactará pronto. Máximo 3 líneas.
+${rejectionRule}
 ${outOfScopeRule}
 ${priceRule}
 ${techRule}`;
@@ -298,6 +302,7 @@ REGLAS:
 3. Tu respuesta SIEMPRE termina con una pregunta.
 4. Contexto si preguntan: "Para que nuestro representante te contacte y dé seguimiento."
 5. Máximo 2 líneas. Tono amigable.
+${rejectionRule}
 ${outOfScopeRule}
 ${priceRule}
 ${techRule}`;
