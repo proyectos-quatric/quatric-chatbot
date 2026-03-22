@@ -67,7 +67,7 @@ const NAME_RE = /(?:(?:me llamo|soy|mi nombre es|ll[áa]mame)\s+)([A-ZÁÉÍÓÚ
 const NAME_BLOCK = /^(no|si|ok|ya|hola|buenas|gracias|bien|mal|claro|perfecto|listo|dale|bueno|quiero|tengo|necesito|eso|esto|aqui|ahi|pues|este|para|san|santa|santo|colonia|residencial|urbanizacion|urb|es|de|la|lo|las|los|un|una|el|mi|por|con|que|como|donde)/i;
 // Palabras que indican que la respuesta NO es un nombre propio
 const NOT_A_NAME_RE = /(san|santa|santo|colonia|urb\.?|urbanizaci[oó]n|ciudad|barrio|caser[ií]o|canton|aldea|municipio|departamento|zona|sector|boulevard|avenida|calle|pasaje|lote|manzana|bloque|edificio|local|negocio|empresa|proyecto|instalaci[oó]n|presupuesto|cotizaci[oó]n|trabajo|servicio)/i;
-const PROYECTO_RE = /\b(instalaci[óo]n|cableado|transformador|tablero|panel|acometida|circuito|mantenimiento|revisi[óo]n|ampliaci[óo]n|subestaci[óo]n|alumbrado|medidor|generador|aire|aires|acondicionado|acondicionados|a\/c|minisplit|split|climatizaci[óo]n)\b/i;
+const PROYECTO_RE = /\b(instalaci[óo]n|cableado|transformador|tablero|panel|acometida|circuito|mantenimiento|revisi[óo]n|ampliaci[óo]n|subestaci[óo]n|alumbrado|medidor|generador|aire|aires|acondicionado|acondicionados|a\/c|minisplit|split|climatizaci[óo]n|extensi[óo]n|extensiones|tomacorriente|tomacorrientes|toma[s]?|enchufe[s]?|punto[s]? de luz|iluminaci[óo]n|luminaria[s]?|foco[s]?|reflector[es]?|l[aá]mpara[s]?|bombilla[s]?|interruptor[es]?|apagador[es]?|ventilador[es]?|calentador[es]?|ducha[s]? el[eé]ctrica[s]?|poste[s]?|canaleta[s]?|ducto[s]?|bandeja[s]?|ups|inversor[es]?|planta el[eé]ctrica|panel solar|fotovoltai\w*|poner|instalar|cambiar|reparar|revisar)\b/i;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // HELPERS
@@ -151,6 +151,22 @@ function extractData(msg, session) {
   if (!d.fecha) { const m = raw.match(DATE_RE); if (m) d.fecha = m[0]; }
   if (!d.ubicacion && LOCATION_RE.test(raw)) d.ubicacion = raw.slice(0, 120);
   if (!d.proyecto && PROYECTO_RE.test(raw)) d.proyecto = raw.split(".")[0].slice(0, 200);
+
+  // Fallback inteligente: si ya se conoce el tipo pero proyecto sigue null,
+  // y el cliente dio una frase descriptiva SIN que el bot se lo hubiera pedido
+  // (ni tampoco estaba respondiendo otro campo), capturarla como proyecto.
+  if (!d.proyecto && d.tipo && !asked) {
+    const palabras = raw.split(/\s+/);
+    const esDatoContacto =
+      PHONE_RE.test(raw) ||
+      EMAIL_RE.test(raw) ||
+      (LOCATION_RE.test(raw) && palabras.length <= 3) ||
+      (CAP_RE.test(raw)) ||
+      (TENSION_RE.test(raw));
+    if (palabras.length >= 3 && !esDatoContacto) {
+      d.proyecto = raw.slice(0, 200);
+    }
+  }
 
   // Nombre — trigger + fallback 2-3 palabras
   if (!d.nombre) {
